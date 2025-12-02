@@ -52,7 +52,6 @@ npm-debug.log*
 
 # Secret configuration files
 config.h
-config.example.h
 /secrets/
 
 # Temporary files
