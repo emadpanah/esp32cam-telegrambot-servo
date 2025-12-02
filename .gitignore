@@ -1,0 +1,61 @@
+# Arduino IDE files
+*.elf
+*.hex
+*.eep
+*.bin
+*.lss
+*.sym
+*.lst
+*.map
+*.db
+*.adb
+*.dep
+*.stackdump
+*.pyc
+*.pyo
+*.tmp
+*.swp
+
+# Arduino build directories
+build-*/
+preproc/
+*.gcda
+*.gcno
+*.s
+*.d
+*.ii
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# PlatformIO
+.pio/
+.piolibdeps/
+.pioenvs/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Log files
+*.log
+npm-debug.log*
+
+# Secret configuration files
+config.h
+config.example.h
+/secrets/
+
+# Temporary files
+*.tmp
+*~
+*.bak
