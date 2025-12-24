@@ -1,3 +1,4 @@
+// html_page.h  (ONE SERVO VERSION)
 #ifndef HTML_PAGE_H
 #define HTML_PAGE_H
 
@@ -35,7 +36,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
   <div class="wrap">
-    <h1>ESP32-CAM Servo Monitor</h1>
+    <h1>ESP32-CAM Servo Monitor (1-Servo)</h1>
 
     <div class="video">
       <img id="stream" src="/stream">
@@ -77,23 +78,18 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
     <div class="row" style="margin-top:14px;">
       <div class="card">
-        <h3>Servo</h3>
+        <h3>Servo (Pan)</h3>
         <div class="servoBtns">
           <button class="btn primary" onclick="servoCmd('left')">⬅️ Left</button>
           <button class="btn primary" onclick="servoCmd('center')">🎯 Center</button>
           <button class="btn primary" onclick="servoCmd('right')">➡️ Right</button>
-          <button class="btn primary" onclick="servoCmd('down')">⬇️ Down</button>
-          <button class="btn primary" onclick="servoCmd('stop')">⏹ Stop</button>
-          <button class="btn primary" onclick="servoCmd('up')">⬆️ Up</button>
         </div>
 
         <label>Pan (0..180)</label>
         <input id="pan" type="number" min="0" max="180"/>
-        <label>Tilt (0..180)</label>
-        <input id="tilt" type="number" min="0" max="180"/>
+        <button class="btn good" onclick="setPan()">Apply Pan</button>
 
-        <button class="btn good" onclick="setServoAngles()">Apply Pan/Tilt</button>
-        <div class="small mono">Pan=<span id="panVal">?</span> Tilt=<span id="tiltVal">?</span></div>
+        <div class="small mono">Pan=<span id="panVal">?</span></div>
       </div>
 
       <div class="card">
@@ -131,13 +127,11 @@ function saveSettings(){
 }
 
 function servoCmd(cmd){
-  fetch('/servo?cmd=' + encodeURIComponent(cmd)).then(r=>r.text()).then(x=>console.log(x));
+  fetch('/servo?cmd=' + encodeURIComponent(cmd)).then(r => r.text()).then(_ => {});
 }
-
-function setServoAngles(){
+function setPan(){
   const pan = parseInt(document.getElementById('pan').value||'0',10);
-  const tilt = parseInt(document.getElementById('tilt').value||'0',10);
-  fetch('/servo?pan=' + pan + '&tilt=' + tilt).then(r=>r.text()).then(x=>console.log(x));
+  fetch('/servo?pan=' + pan).then(r=>r.text()).then(_ => {});
 }
 
 function updateUI(data){
@@ -157,10 +151,7 @@ function updateUI(data){
   document.getElementById('thVal').textContent = data.motionThreshold;
 
   document.getElementById('panVal').textContent = data.pan;
-  document.getElementById('tiltVal').textContent = data.tilt;
-
   if(document.activeElement.id !== 'pan') document.getElementById('pan').value = data.pan;
-  if(document.activeElement.id !== 'tilt') document.getElementById('tilt').value = data.tilt;
 }
 
 function tick(){

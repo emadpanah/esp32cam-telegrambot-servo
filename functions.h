@@ -1,3 +1,4 @@
+// functions.h (ONE SERVO VERSION)
 #ifndef FUNCTIONS_H
 #define FUNCTIONS_H
 
@@ -14,30 +15,24 @@ struct Persisted {
   uint32_t captured;
   uint32_t sent;
   int16_t pan;
-  int16_t tilt;
 };
 
 // ===== Reset reason (portable) =====
 static int resetReasonCode() {
 #if defined(ESP_ARDUINO_VERSION_MAJOR)
-  // Arduino-ESP32
   return (int)esp_reset_reason();
 #else
   return 0;
 #endif
 }
 static String resetReasonString() {
-  int r = resetReasonCode();
-  return String(r);
+  return String(resetReasonCode());
 }
 
-// ===== Servo =====
+// ===== Servo (PAN only) =====
 #if SERVO_ENABLED
 static Servo servoPan;
-static Servo servoTilt;
-
 static int panAngle = PAN_CENTER;
-static int tiltAngle = TILT_CENTER;
 
 static int clampi(int v, int lo, int hi) {
   if (v < lo) return lo;
@@ -45,48 +40,33 @@ static int clampi(int v, int lo, int hi) {
   return v;
 }
 
-static void servoWriteRaw(int pan, int tilt) {
+static void servoWriteRaw(int pan) {
   servoPan.write(pan);
-  if (SERVO_TILT_PIN >= 0) servoTilt.write(tilt);
 }
 
 static void servoApply(bool smooth = true) {
   panAngle = clampi(panAngle, PAN_MIN, PAN_MAX);
-  tiltAngle = clampi(tiltAngle, TILT_MIN, TILT_MAX);
 
   if (!smooth) {
-    servoWriteRaw(panAngle, tiltAngle);
+    servoWriteRaw(panAngle);
     return;
   }
 
-  int curPan = servoPan.read();
-  if (curPan <= 0) curPan = panAngle;
-
-  int curTilt = tiltAngle;
-  if (SERVO_TILT_PIN >= 0) {
-    curTilt = servoTilt.read();
-    if (curTilt <= 0) curTilt = tiltAngle;
-  }
+  int cur = servoPan.read();
+  if (cur <= 0) cur = panAngle;
 
   int guard = 0;
-  while ((curPan != panAngle) || (SERVO_TILT_PIN >= 0 && curTilt != tiltAngle)) {
-    if (curPan < panAngle) curPan++;
-    else if (curPan > panAngle) curPan--;
-
-    if (SERVO_TILT_PIN >= 0) {
-      if (curTilt < tiltAngle) curTilt++;
-      else if (curTilt > tiltAngle) curTilt--;
-    }
-
-    servoWriteRaw(curPan, curTilt);
+  while (cur != panAngle) {
+    if (cur < panAngle) cur++;
+    else cur--;
+    servoWriteRaw(cur);
     delay(7);
-    if (++guard > 400) break;
+    if (++guard > 300) break;
   }
 }
 
 void servoCenter(bool smooth) {
   panAngle = PAN_CENTER;
-  tiltAngle = TILT_CENTER;
   servoApply(smooth);
   stageSettingsDirty();
 }
@@ -94,14 +74,8 @@ void servoCenter(bool smooth) {
 void servoInit() {
   servoPan.setPeriodHertz(50);
   servoPan.attach(SERVO_PAN_PIN, 500, 2400);
-
-  if (SERVO_TILT_PIN >= 0) {
-    servoTilt.setPeriodHertz(50);
-    servoTilt.attach(SERVO_TILT_PIN, 500, 2400);
-  }
-
   servoCenter(false);
-  Serial.printf("Servo init OK. pan=%d tilt=%d\n", panAngle, tiltAngle);
+  Serial.printf("Servo init OK. pan=%d\n", panAngle);
 }
 #else
 void servoInit() {}
@@ -227,7 +201,6 @@ void loadSettings() {
     sentCount = 0;
 #if SERVO_ENABLED
     panAngle = PAN_CENTER;
-    tiltAngle = TILT_CENTER;
 #endif
     return;
   }
@@ -249,7 +222,6 @@ void loadSettings() {
 
 #if SERVO_ENABLED
   if (p.pan >= 0 && p.pan <= 180) panAngle = p.pan;
-  if (p.tilt >= 0 && p.tilt <= 180) tiltAngle = p.tilt;
 #endif
 
   Serial.println("EEPROM loaded");
@@ -266,11 +238,10 @@ void saveSettingsNow() {
   p.sent = (uint32_t)sentCount;
 #if SERVO_ENABLED
   p.pan = (int16_t)panAngle;
-  p.tilt = (int16_t)tiltAngle;
 #else
   p.pan = -1;
-  p.tilt = -1;
 #endif
+
   EEPROM.put(0, p);
   EEPROM.commit();
   Serial.println("EEPROM committed");
@@ -298,12 +269,12 @@ bool detectMotion() {
 
   if (motion) {
     if (fb->len > previousFrameSize) {
-      uint8_t* p = (uint8_t*)realloc(previousFrame, fb->len);
-      if (!p) {
+      uint8_t* q = (uint8_t*)realloc(previousFrame, fb->len);
+      if (!q) {
         esp_camera_fb_return(fb);
         return false;
       }
-      previousFrame = p;
+      previousFrame = q;
     }
     memcpy(previousFrame, fb->buf, fb->len);
     previousFrameSize = fb->len;
@@ -480,13 +451,13 @@ static void saveLastUpdateID(long id) {
   f.close();
 }
 
-// ===== Telegram commands =====
 String parseTelegramCommand(String s) {
   s.trim();
   if (s.indexOf('@') > 0) s = s.substring(0, s.indexOf('@'));
   return s;
 }
 
+// ===== Telegram commands (PAN only) =====
 void handleTelegramCommand(String cmd) {
   cmd.toLowerCase();
 
@@ -494,8 +465,8 @@ void handleTelegramCommand(String cmd) {
     String h = "🤖 Commands:\n";
     h += "/capture\n/status\n/settings\n/test\n/stream\n/reboot\n/motion_on\n/motion_off\n/debug\n";
 #if SERVO_ENABLED
-    h += "/left /right /up /down /center\n";
-    h += "/pan N   (0..180)\n/tilt N  (0..180)\n/servo\n";
+    h += "/left /right /center\n";
+    h += "/pan N   (0..180)\n/servo\n";
 #endif
     h += "\nIP: " + WiFi.localIP().toString();
     h += "\nTime: " + getTimeString();
@@ -516,7 +487,7 @@ void handleTelegramCommand(String cmd) {
     s += "Interval: " + String(timeInterval) + "m\n";
     s += "Threshold: " + String(motionThreshold) + "\n";
 #if SERVO_ENABLED
-    s += "Pan: " + String(panAngle) + " Tilt: " + String(tiltAngle) + "\n";
+    s += "Pan: " + String(panAngle) + "\n";
 #endif
     sendTelegramMessage(s);
   }
@@ -574,11 +545,11 @@ void handleTelegramCommand(String cmd) {
 
 #if SERVO_ENABLED
   else if (cmd == "/servo") {
-    sendTelegramMessage("🎛 Servo\nPan=" + String(panAngle) + "\nTilt=" + String(tiltAngle));
+    sendTelegramMessage("🎛 Servo\nPan=" + String(panAngle));
   }
   else if (cmd == "/center") {
     servoCenter(true);
-    sendTelegramMessage("🎯 Centered\nPan=" + String(panAngle) + " Tilt=" + String(tiltAngle));
+    sendTelegramMessage("🎯 Centered\nPan=" + String(panAngle));
   }
   else if (cmd == "/left") {
     panAngle = clampi(panAngle - SERVO_STEP, PAN_MIN, PAN_MAX);
@@ -592,34 +563,12 @@ void handleTelegramCommand(String cmd) {
     stageSettingsDirty();
     sendTelegramMessage("➡️ Pan=" + String(panAngle));
   }
-  else if (cmd == "/up") {
-    if (SERVO_TILT_PIN < 0) { sendTelegramMessage("⚠️ Tilt disabled"); return; }
-    tiltAngle = clampi(tiltAngle + SERVO_STEP, TILT_MIN, TILT_MAX);
-    servoApply(true);
-    stageSettingsDirty();
-    sendTelegramMessage("⬆️ Tilt=" + String(tiltAngle));
-  }
-  else if (cmd == "/down") {
-    if (SERVO_TILT_PIN < 0) { sendTelegramMessage("⚠️ Tilt disabled"); return; }
-    tiltAngle = clampi(tiltAngle - SERVO_STEP, TILT_MIN, TILT_MAX);
-    servoApply(true);
-    stageSettingsDirty();
-    sendTelegramMessage("⬇️ Tilt=" + String(tiltAngle));
-  }
   else if (cmd.startsWith("/pan ")) {
     int a = cmd.substring(5).toInt();
     panAngle = clampi(a, PAN_MIN, PAN_MAX);
     servoApply(true);
     stageSettingsDirty();
     sendTelegramMessage("🎚 Pan=" + String(panAngle));
-  }
-  else if (cmd.startsWith("/tilt ")) {
-    if (SERVO_TILT_PIN < 0) { sendTelegramMessage("⚠️ Tilt disabled"); return; }
-    int a = cmd.substring(6).toInt();
-    tiltAngle = clampi(a, TILT_MIN, TILT_MAX);
-    servoApply(true);
-    stageSettingsDirty();
-    sendTelegramMessage("🎚 Tilt=" + String(tiltAngle));
   }
 #endif
   else {
@@ -656,7 +605,7 @@ void checkTelegramCommands() {
 
       long update_id = doc["result"][0]["update_id"];
 
-      // ✅ critical: save offset BEFORE executing any command
+      // IMPORTANT: save offset BEFORE executing command
       saveLastUpdateID(update_id);
 
       if (doc["result"][0].containsKey("message") && doc["result"][0]["message"].containsKey("text")) {
@@ -675,9 +624,7 @@ void checkTelegramCommands() {
 
 // ===== Web routes =====
 void setupServerRoutes() {
-  server.on("/", HTTP_GET, []() {
-    server.send(200, "text/html", INDEX_HTML);
-  });
+  server.on("/", HTTP_GET, []() { server.send(200, "text/html", INDEX_HTML); });
 
   server.on("/stream", HTTP_GET, []() {
     camera_fb_t* fb = esp_camera_fb_get();
@@ -699,10 +646,7 @@ void setupServerRoutes() {
   server.on("/save-settings", HTTP_POST, []() {
     String body = server.arg("plain");
     StaticJsonDocument<256> doc;
-    if (deserializeJson(doc, body)) {
-      server.send(400, "text/plain", "Bad JSON");
-      return;
-    }
+    if (deserializeJson(doc, body)) { server.send(400, "text/plain", "Bad JSON"); return; }
 
     int m = doc["mode"] | 0;
     int ti = doc["interval"] | 5;
@@ -728,10 +672,7 @@ void setupServerRoutes() {
 
       if (c == "left") { panAngle = clampi(panAngle - SERVO_STEP, PAN_MIN, PAN_MAX); servoApply(true); }
       else if (c == "right") { panAngle = clampi(panAngle + SERVO_STEP, PAN_MIN, PAN_MAX); servoApply(true); }
-      else if (c == "up") { if (SERVO_TILT_PIN >= 0) tiltAngle = clampi(tiltAngle + SERVO_STEP, TILT_MIN, TILT_MAX); servoApply(true); }
-      else if (c == "down") { if (SERVO_TILT_PIN >= 0) tiltAngle = clampi(tiltAngle - SERVO_STEP, TILT_MIN, TILT_MAX); servoApply(true); }
       else if (c == "center") { servoCenter(true); }
-      else if (c == "stop") { /* no-op */ }
 
       stageSettingsDirty();
       server.send(200, "text/plain", "OK");
@@ -740,13 +681,13 @@ void setupServerRoutes() {
 
     if (server.hasArg("pan")) {
       panAngle = clampi(server.arg("pan").toInt(), PAN_MIN, PAN_MAX);
+      servoApply(true);
+      stageSettingsDirty();
+      server.send(200, "text/plain", "OK");
+      return;
     }
-    if (server.hasArg("tilt") && SERVO_TILT_PIN >= 0) {
-      tiltAngle = clampi(server.arg("tilt").toInt(), TILT_MIN, TILT_MAX);
-    }
-    servoApply(true);
-    stageSettingsDirty();
-    server.send(200, "text/plain", "OK");
+
+    server.send(400, "text/plain", "Missing args");
 #else
     server.send(200, "text/plain", "SERVO_DISABLED");
 #endif
@@ -787,10 +728,8 @@ void setupServerRoutes() {
     doc["currentMode"] = (captureMode==0)?"Motion":(captureMode==1)?"Time":"Mixed";
 #if SERVO_ENABLED
     doc["pan"] = panAngle;
-    doc["tilt"] = tiltAngle;
 #else
     doc["pan"] = -1;
-    doc["tilt"] = -1;
 #endif
 
     String out;
