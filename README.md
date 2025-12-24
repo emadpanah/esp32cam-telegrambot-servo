@@ -32,7 +32,7 @@ A **stable security monitoring system** using **ESP32-CAM (AI Thinker)** that ca
 
 ---
 
-## Telegram Bot Commands
+## Telegram Bot Commands pack
 
 ### Basic Commands
 
