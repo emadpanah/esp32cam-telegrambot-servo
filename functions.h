@@ -82,6 +82,131 @@ void servoInit() {}
 void servoCenter(bool smooth) { (void)smooth; }
 #endif
 
+// ===== Full Security Mode (PAN sweep + photo each step) =====
+#if SERVO_ENABLED
+
+// Defaults if not defined in config.h
+#ifndef FULLSEC_STEP_DEG
+#define FULLSEC_STEP_DEG 10
+#endif
+#ifndef FULLSEC_SETTLE_MS
+#define FULLSEC_SETTLE_MS 350
+#endif
+#ifndef FULLSEC_COOLDOWN_MS
+#define FULLSEC_COOLDOWN_MS 1200
+#endif
+
+enum SecState : uint8_t {
+  SEC_IDLE = 0,
+  SEC_MOVE,
+  SEC_WAIT_SETTLE,
+  SEC_CAPTURE,
+  SEC_WAIT_COOLDOWN,
+  SEC_DONE
+};
+
+static bool securityActive = false;
+static SecState secState = SEC_IDLE;
+static int secAngle = PAN_MIN;
+static unsigned long secT0 = 0;
+static bool secAnnounced = false;
+
+void startFullSecurityScan() {
+  if (securityActive) {
+    sendTelegramMessage("⚠️ FullSecurity already running. Use /stop");
+    return;
+  }
+
+  securityActive = true;
+  secState = SEC_MOVE;
+  secAngle = clampi(PAN_MIN, 0, 180);
+  secT0 = millis();
+  secAnnounced = false;
+
+  sendTelegramMessage("🛡 FullSecurity START\nSweeping " + String(PAN_MIN) + "→" + String(PAN_MAX) +
+                      " step=" + String(FULLSEC_STEP_DEG) +
+                      "\nI'll send a photo at each step.");
+}
+
+void stopFullSecurityScan() {
+  if (!securityActive) {
+    sendTelegramMessage("ℹ️ FullSecurity is not running.");
+    return;
+  }
+
+  securityActive = false;
+  secState = SEC_IDLE;
+  sendTelegramMessage("🛑 FullSecurity STOPPED.");
+}
+
+static void secGoNextStep() {
+  secAngle += FULLSEC_STEP_DEG;
+  if (secAngle > PAN_MAX) {
+    secState = SEC_DONE;
+  } else {
+    secState = SEC_MOVE;
+  }
+}
+
+void securityModeTick() {
+  if (!securityActive) return;
+
+  const unsigned long now = millis();
+
+  switch (secState) {
+    case SEC_MOVE: {
+      // Move servo to current target angle
+      panAngle = clampi(secAngle, PAN_MIN, PAN_MAX);
+      servoApply(true);
+      stageSettingsDirty();
+
+      secT0 = now;
+      secState = SEC_WAIT_SETTLE;
+      break;
+    }
+
+    case SEC_WAIT_SETTLE: {
+      if (now - secT0 >= (unsigned long)FULLSEC_SETTLE_MS) {
+        secState = SEC_CAPTURE;
+      }
+      break;
+    }
+
+    case SEC_CAPTURE: {
+      // Avoid spamming "started" multiple times
+      if (!secAnnounced) secAnnounced = true;
+
+      // Capture + send photo (this is the heavy part; still OK because it returns)
+      captureImage("FullSecurity pan=" + String(panAngle));
+
+      secT0 = now;
+      secState = SEC_WAIT_COOLDOWN;
+      break;
+    }
+
+    case SEC_WAIT_COOLDOWN: {
+      if (now - secT0 >= (unsigned long)FULLSEC_COOLDOWN_MS) {
+        secGoNextStep();
+      }
+      break;
+    }
+
+    case SEC_DONE: {
+      securityActive = false;
+      secState = SEC_IDLE;
+      sendTelegramMessage("✅ FullSecurity DONE\nFinished sweep " + String(PAN_MIN) + "→" + String(PAN_MAX));
+      break;
+    }
+
+    default:
+      securityActive = false;
+      secState = SEC_IDLE;
+      break;
+  }
+}
+
+#endif // SERVO_ENABLED
+
 // ===== Time Tehran =====
 void setupTimeTehran() {
   const char* TZ_TEHRAN = "IRST-3:30";
@@ -461,12 +586,24 @@ String parseTelegramCommand(String s) {
 void handleTelegramCommand(String cmd) {
   cmd.toLowerCase();
 
+  // Global stop
+  if (cmd == "/stop") {
+#if SERVO_ENABLED
+    stopFullSecurityScan();
+#else
+    sendTelegramMessage("SERVO_DISABLED");
+#endif
+    return;
+  }
+
   if (cmd == "/start" || cmd == "/help") {
     String h = "🤖 Commands:\n";
     h += "/capture\n/status\n/settings\n/test\n/stream\n/reboot\n/motion_on\n/motion_off\n/debug\n";
 #if SERVO_ENABLED
     h += "/left /right /center\n";
     h += "/pan N   (0..180)\n/servo\n";
+    h += "/fullsecurity   (sweep + photo each 10°)\n";
+    h += "/stop           (stop fullsecurity)\n";
 #endif
     h += "\nIP: " + WiFi.localIP().toString();
     h += "\nTime: " + getTimeString();
@@ -544,6 +681,9 @@ void handleTelegramCommand(String cmd) {
   }
 
 #if SERVO_ENABLED
+  else if (cmd == "/fullsecurity") {
+    startFullSecurityScan();
+  }
   else if (cmd == "/servo") {
     sendTelegramMessage("🎛 Servo\nPan=" + String(panAngle));
   }
@@ -673,6 +813,8 @@ void setupServerRoutes() {
       if (c == "left") { panAngle = clampi(panAngle - SERVO_STEP, PAN_MIN, PAN_MAX); servoApply(true); }
       else if (c == "right") { panAngle = clampi(panAngle + SERVO_STEP, PAN_MIN, PAN_MAX); servoApply(true); }
       else if (c == "center") { servoCenter(true); }
+      else if (c == "fullsecurity") { startFullSecurityScan(); }
+      else if (c == "stop") { stopFullSecurityScan(); }
 
       stageSettingsDirty();
       server.send(200, "text/plain", "OK");

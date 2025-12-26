@@ -54,4 +54,10 @@ void handleTelegramCommand(String cmd);
 void servoInit();
 void servoCenter(bool smooth = true);
 
+// Full security scan
+void startFullSecurityScan();
+void stopFullSecurityScan();
+void securityModeTick();
+
+
 #endif

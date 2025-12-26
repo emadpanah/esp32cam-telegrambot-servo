@@ -37,8 +37,8 @@ const char* TELEGRAM_CHAT_ID   = "-1001234567890"; // channel/group id (starts w
 // ===== Servo (Pan/Tilt) =====
 #define SERVO_ENABLED 1
 
-#define SERVO_PAN_PIN   13
-#define SERVO_TILT_PIN  14   // set -1 if you only have one servo
+#define SERVO_PAN_PIN   14
+#define SERVO_TILT_PIN  -1   // set -1 if you only have one servo
 
 #define PAN_MIN     10
 #define PAN_MAX     170
@@ -49,5 +49,10 @@ const char* TELEGRAM_CHAT_ID   = "-1001234567890"; // channel/group id (starts w
 #define TILT_CENTER 90
 
 #define SERVO_STEP   5
+
+#define FULLSEC_STEP_DEG   10
+#define FULLSEC_SETTLE_MS  350
+#define FULLSEC_COOLDOWN_MS 1200
+
 
 #endif

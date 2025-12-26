@@ -78,6 +78,10 @@ void loop() {
   server.handleClient();
   checkTelegramCommands();
 
+  #if SERVO_ENABLED
+  securityModeTick();
+  #endif
+
   persistSettingsIfDue();
 
   const unsigned long now = millis();
